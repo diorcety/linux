@@ -1,0 +1,4 @@
+platform-$(CONFIG_CHEETAH)	+= cheetah/
+cflags-$(CONFIG_CHEETAH)	+= -I$(srctree)/arch/mips/include/asm/mach-cheetah
+load-$(CONFIG_CHEETAH)		+= 0xffffffff80000500
+all-$(CONFIG_CHEETAH)		:= vmlinux.bin

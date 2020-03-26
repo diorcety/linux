@@ -16,6 +16,10 @@
 #include <asm/processor.h>
 #include <asm/prom.h>
 
+#if defined(CONFIG_CHEETAH)
+#include <asm/mach-cheetah/cheetah.h>
+#endif
+
 unsigned int vced_count, vcei_count;
 
 /*
@@ -63,6 +67,9 @@ static int show_cpuinfo(struct seq_file *m, void *v)
 	seq_printf(m, fmt, __cpu_name[n],
 		      (version >> 4) & 0x0f, version & 0x0f,
 		      (fp_vers >> 4) & 0x0f, fp_vers & 0x0f);
+#if defined(CONFIG_CHEETAH)
+	seq_printf(m, "cpu MHz\t\t\t: %u.%02u\n", CPU_CLK / 1000000, ((CPU_CLK / 10000) % 100));
+#endif
 	seq_printf(m, "BogoMIPS\t\t: %u.%02u\n",
 		      cpu_data[n].udelay_val / (500000/HZ),
 		      (cpu_data[n].udelay_val / (5000/HZ)) % 100);

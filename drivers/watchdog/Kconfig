@@ -1509,6 +1509,12 @@ config TXX9_WDT
 	help
 	  Hardware driver for the built-in watchdog timer on TXx9 MIPS SoCs.
 
+config CHEETAH_WDT
+	tristate "Cheetah Watchdog Timer"
+	depends on CHEETAH
+	help
+	  Hardware driver for the built-in watchdog timer on Montage SoCs.
+
 config OCTEON_WDT
 	tristate "Cavium OCTEON SOC family Watchdog Timer"
 	depends on CAVIUM_OCTEON_SOC

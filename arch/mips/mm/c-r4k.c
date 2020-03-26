@@ -362,6 +362,7 @@ static void r4k_blast_icache_page_indexed_setup(void)
 		r4k_blast_icache_page_indexed = (void *)cache_noop;
 	else if (ic_lsize == 16)
 		r4k_blast_icache_page_indexed = blast_icache16_page_indexed;
+#ifndef CONFIG_CHEETAH
 	else if (ic_lsize == 32) {
 		if (R4600_V1_INDEX_ICACHEOP_WAR && cpu_is_r4600_v1_x())
 			r4k_blast_icache_page_indexed =
@@ -377,6 +378,7 @@ static void r4k_blast_icache_page_indexed_setup(void)
 				blast_icache32_page_indexed;
 	} else if (ic_lsize == 64)
 		r4k_blast_icache_page_indexed = blast_icache64_page_indexed;
+#endif
 }
 
 void (* r4k_blast_icache)(void);
@@ -390,6 +392,7 @@ static void r4k_blast_icache_setup(void)
 		r4k_blast_icache = (void *)cache_noop;
 	else if (ic_lsize == 16)
 		r4k_blast_icache = blast_icache16;
+#ifndef CONFIG_CHEETAH
 	else if (ic_lsize == 32) {
 		if (R4600_V1_INDEX_ICACHEOP_WAR && cpu_is_r4600_v1_x())
 			r4k_blast_icache = blast_r4600_v1_icache32;
@@ -403,6 +406,7 @@ static void r4k_blast_icache_setup(void)
 		r4k_blast_icache = blast_icache64;
 	else if (ic_lsize == 128)
 		r4k_blast_icache = blast_icache128;
+#endif
 }
 
 static void (* r4k_blast_scache_page)(unsigned long addr);

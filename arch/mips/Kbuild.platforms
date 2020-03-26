@@ -8,6 +8,7 @@ platforms += bcm47xx
 platforms += bcm63xx
 platforms += bmips
 platforms += cavium-octeon
+platforms += cheetah
 platforms += cobalt
 platforms += dec
 platforms += emma
