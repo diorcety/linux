@@ -52,50 +52,6 @@
 #define DRV_NAME "ttyS"
 extern void idelay(unsigned int count);
 
-struct serial_state {
-	int	baud_base;
-	unsigned long	port;
-	int	irq;
-	int	flags;
-	int	type;
-	int	line;
-	int	xmit_fifo_size;
-	int	custom_divisor;
-	int	count;
-	unsigned short	close_delay;
-	unsigned short	closing_wait; /* time to wait before closing */
-	struct async_icount	icount;
-	struct async_struct *info;
-};
-
-struct async_struct {
-	unsigned long		port;
-	int			flags;
-	int			xmit_fifo_size;
-	struct serial_state	*state;
-	struct tty_struct 	*tty;
-	int			timeout;
-	int			quot;
-	int			x_char;	/* xon/xoff character */
-	int			close_delay;
-	unsigned short		closing_wait;
-	unsigned short		closing_wait2; /* obsolete */
-	unsigned long		last_active;
-	int			line;
-	int			blocked_open; /* # of blocked opens */
-	struct circ_buf		xmit;
-	struct tasklet_struct	tlet;
-#ifdef DECLARE_WAITQUEUE
-	wait_queue_head_t	open_wait;
-	wait_queue_head_t	close_wait;
-	wait_queue_head_t	delta_msr_wait;
-#else
-	struct wait_queue	*open_wait;
-	struct wait_queue	*close_wait;
-	struct wait_queue	*delta_msr_wait;
-#endif
-};
-
 #define URCS_CTRL_MASK   (~((unsigned int)(1<<URCS_BRSHFT)-1)|URCS_TIE|URCS_RIE|URCS_PE|URCS_EVEN)
 #define URCS_ENABLE(bitmap)  {\
     cta_uart_control|=bitmap;\
@@ -175,9 +131,9 @@ static void rs_enable_rx_interrupts (void)
     local_irq_restore(flags);
 }
 
-static struct async_struct *IRQ_ports;
+static struct serial_state *IRQ_ports;
 
-static void change_speed(struct async_struct *info,
+static void change_speed(struct serial_state *info,
                          struct ktermios *old_termios)
 {
 	int baud,brsr = 0;
@@ -225,7 +181,7 @@ static void rs_stop(struct tty_struct *tty)
 
 static void rs_start(struct tty_struct *tty)
 {
-    struct async_struct *info = (struct async_struct *)tty->driver_data;
+    struct serial_state *info = tty->driver_data;
     unsigned long flags;
 
     local_irq_save(flags);
@@ -238,7 +194,7 @@ static void rs_start(struct tty_struct *tty)
     local_irq_restore(flags);
 }
 
-static void rs_sched_event(struct async_struct *info)
+static void rs_sched_event(struct serial_state *info)
 {
     tasklet_schedule(&info->tlet);
 }
@@ -246,7 +202,7 @@ static void rs_sched_event(struct async_struct *info)
 #if defined(CONFIG_KGDB)
 void trigger_kgdb_breakpoint(void);
 #endif
-static void receive_chars(struct async_struct *info)
+static void receive_chars(struct serial_state *info)
 {
 	struct tty_struct *tty = info->tty;
 	unsigned char ch, flag;
@@ -259,7 +215,7 @@ static void receive_chars(struct async_struct *info)
 #endif
 
 	flag = TTY_NORMAL;
-	icount = &info->state->icount;
+	icount = &info->info->icount;
 
 	do
 	{
@@ -334,7 +290,7 @@ static void receive_chars(struct async_struct *info)
 
 static void transmit_chars(void)
 {
-	struct async_struct *info = IRQ_ports;
+	struct serial_state *info = IRQ_ports;
 	volatile int *p = (int *) UR_BASE;
 	int empty=0;
 #if 1
@@ -354,7 +310,7 @@ static void transmit_chars(void)
 			if (info->x_char)
 			{
 				p[URBR>>2] = ((unsigned int)info->x_char)<<URBR_DTSHFT;
-				info->state->icount.tx++;
+				info->info->icount.tx++;
 				info->x_char = 0;
 			}
 			else
@@ -374,7 +330,7 @@ static void transmit_chars(void)
 #endif
 					p[URBR>>2] = ((unsigned int)info->xmit.buf[info->xmit.tail++]) <<URBR_DTSHFT;
 					info->xmit.tail = info->xmit.tail & (SERIAL_XMIT_SIZE-1);
-					info->state->icount.tx++;
+					info->info->icount.tx++;
 					if (info->xmit.head == info->xmit.tail)
 					{
 						empty=1;
@@ -405,7 +361,7 @@ static void transmit_chars(void)
 #ifdef CONFIG_CHEETAH_UART_RTSCTS
 static irqreturn_t cta_cts(int irq, void *data)
 {
-	struct async_struct * info = IRQ_ports;
+	struct serial_state * info = IRQ_ports;
 	//if (info && (info->flags & ASYNC_CTS_FLOW)) {
 	if (info) {
 		//update trigger level
@@ -451,7 +407,7 @@ static void cta_uart_deliver(unsigned long x)
 {
 	unsigned long status = cta_uart_status;
 	volatile int *p = (int *) UR_BASE;
-	struct async_struct * info;
+	struct serial_state * info;
 	int pass_counter = 256;
 
 	/* XXX : Clear any interrupts we might be about to handle */
@@ -481,11 +437,11 @@ static void cta_uart_deliver(unsigned long x)
 		{
 			/* RX Frame Error */
 			if (status & URCS_FE)
-				info->state->icount.frame++;
+				info->info->icount.frame++;
 
 			/* RX Parity Error */
 			if (status & URCS_PER)
-				info->state->icount.parity++;
+				info->info->icount.parity++;
 
 #ifdef CONFIG_CHEETAH_UART_RTSCTS
 			if (ctsrts_en) {
@@ -527,7 +483,7 @@ static void cta_uart_deliver(unsigned long x)
 
 static void do_softint(unsigned long private_)
 {
-    struct async_struct *info = (struct async_struct *) private_;
+    struct serial_state *info = (struct serial_state *) private_;
     struct tty_struct   *tty;
 
     tty = info->tty;
@@ -546,7 +502,7 @@ static void do_softint(unsigned long private_)
  * ---------------------------------------------------------------
  */
 
-static int startup(struct async_struct * info)
+static int startup(struct serial_state * info)
 {
     unsigned long flags;
     int retval=0;
@@ -623,7 +579,7 @@ static int startup(struct async_struct * info)
  * This routine will shutdown a serial port; interrupts are disabled, and
  * DTR is dropped if the hangup on close termio flag is on.
  */
-static void shutdown(struct async_struct * info)
+static void shutdown(struct serial_state * info)
 {
     unsigned long   flags;
 
@@ -669,7 +625,7 @@ static void shutdown(struct async_struct * info)
 
 static int rs_put_char(struct tty_struct *tty, unsigned char ch)
 {
-    struct async_struct *info;
+    struct serial_state *info;
     unsigned long flags;
 
     if (!tty)
@@ -697,7 +653,7 @@ static int rs_put_char(struct tty_struct *tty, unsigned char ch)
 
 static void rs_flush_chars(struct tty_struct *tty)
 {
-    struct async_struct *info = (struct async_struct *)tty->driver_data;
+    struct serial_state *info = tty->driver_data;
 
     if (info->xmit.head == info->xmit.tail
         || tty->stopped
@@ -711,7 +667,7 @@ static void rs_flush_chars(struct tty_struct *tty)
 static int rs_write(struct tty_struct * tty, const unsigned char *buf, int count)
 {
     int c, ret = 0;
-    struct async_struct *info;
+    struct serial_state *info;
     unsigned long flags;
 
     if (!tty)
@@ -756,21 +712,21 @@ static int rs_write(struct tty_struct * tty, const unsigned char *buf, int count
 
 static int rs_write_room(struct tty_struct *tty)
 {
-    struct async_struct *info = (struct async_struct *)tty->driver_data;
+    struct serial_state *info = tty->driver_data;
 
     return CIRC_SPACE(info->xmit.head, info->xmit.tail, SERIAL_XMIT_SIZE);
 }
 
 static int rs_chars_in_buffer(struct tty_struct *tty)
 {
-    struct async_struct *info = (struct async_struct *)tty->driver_data;
+    struct serial_state *info = tty->driver_data;
 
     return CIRC_CNT(info->xmit.head, info->xmit.tail, SERIAL_XMIT_SIZE);
 }
 
 static void rs_flush_buffer(struct tty_struct *tty)
 {
-    struct async_struct *info = (struct async_struct *)tty->driver_data;
+    struct serial_state *info = tty->driver_data;
     unsigned long flags;
 
     local_irq_save(flags);
@@ -785,7 +741,7 @@ static void rs_flush_buffer(struct tty_struct *tty)
  */
 static void rs_send_xchar(struct tty_struct *tty, char ch)
 {
-    struct async_struct *info = (struct async_struct *)tty->driver_data;
+    struct serial_state *info = tty->driver_data;
 
     info->x_char = ch;
     if (ch)
@@ -805,7 +761,7 @@ static void rs_send_xchar(struct tty_struct *tty, char ch)
  */
 static void rs_throttle(struct tty_struct * tty)
 {
-    struct async_struct *info = (struct async_struct *)tty->driver_data;
+    struct serial_state *info = tty->driver_data;
     unsigned long flags;
 #ifdef CHEETAH_UART_DEBUG_THROTTLE
     char    buf[64];
@@ -820,7 +776,7 @@ static void rs_throttle(struct tty_struct * tty)
 
 static void rs_unthrottle(struct tty_struct * tty)
 {
-    struct async_struct *info = (struct async_struct *)tty->driver_data;
+    struct serial_state *info = tty->driver_data;
     unsigned long flags;
 #ifdef CHEETAH_UART_DEBUG_THROTTLE
     char    buf[64];
@@ -845,33 +801,32 @@ static void rs_unthrottle(struct tty_struct * tty)
  * ------------------------------------------------------------
  */
 
-static int get_serial_info(struct async_struct * info,
+static int get_serial_info(struct serial_state * info,
                            struct serial_struct __user * retinfo)
 {
     struct serial_struct tmp;
-    struct serial_state *state = info->state;
 
     if (!retinfo)
         return -EFAULT;
     memset(&tmp, 0, sizeof(tmp));
     lock_kernel();
-    tmp.type = state->type;
-    tmp.line = state->line;
-    tmp.port = state->port;
-    tmp.irq = state->irq;
-    tmp.flags = state->flags;
-    tmp.xmit_fifo_size = state->xmit_fifo_size;
-    tmp.baud_base = state->baud_base;
-    tmp.close_delay = state->close_delay;
-    tmp.closing_wait = state->closing_wait;
-    tmp.custom_divisor = state->custom_divisor;
+    tmp.type = info->type;
+    tmp.line = info->line;
+    tmp.port = info->port;
+    tmp.irq = info->irq;
+    tmp.flags = info->flags;
+    tmp.xmit_fifo_size = info->xmit_fifo_size;
+    tmp.baud_base = info->baud_base;
+    tmp.close_delay = info->close_delay;
+    tmp.closing_wait = info->closing_wait;
+    tmp.custom_divisor = info->custom_divisor;
     unlock_kernel();
     if (copy_to_user(retinfo,&tmp,sizeof(*retinfo)))
         return -EFAULT;
     return 0;
 }
 
-static int set_serial_info(struct async_struct * info,
+static int set_serial_info(struct serial_state * info,
                            struct serial_struct __user * new_info)
 {
     struct serial_struct new_serial;
@@ -885,9 +840,9 @@ static int set_serial_info(struct async_struct * info,
     lock_kernel();
     state = info->state;
 
-    change_irq = new_serial.irq != state->irq;
-    change_port = (new_serial.port != state->port);
-    if (change_irq || change_port || (new_serial.xmit_fifo_size != state->xmit_fifo_size))
+    change_irq = new_serial.irq != info->irq;
+    change_port = (new_serial.port != info->port);
+    if (change_irq || change_port || (new_serial.xmit_fifo_size != info->xmit_fifo_size))
     {
         unlock_kernel();
         return -EINVAL;
@@ -895,17 +850,17 @@ static int set_serial_info(struct async_struct * info,
 
     if (!serial_isroot())
     {
-        if ((new_serial.baud_base != state->baud_base) ||
-            (new_serial.close_delay != state->close_delay) ||
-            (new_serial.xmit_fifo_size != state->xmit_fifo_size) ||
+        if ((new_serial.baud_base != info->baud_base) ||
+            (new_serial.close_delay != info->close_delay) ||
+            (new_serial.xmit_fifo_size != info->xmit_fifo_size) ||
             ((new_serial.flags & ~ASYNC_USR_MASK) !=
-             (state->flags & ~ASYNC_USR_MASK)))
+             (info->flags & ~ASYNC_USR_MASK)))
             return -EPERM;
-        state->flags = ((state->flags & ~ASYNC_USR_MASK) |
+        info->flags = ((info->flags & ~ASYNC_USR_MASK) |
                         (new_serial.flags & ASYNC_USR_MASK));
         info->flags = ((info->flags & ~ASYNC_USR_MASK) |
                        (new_serial.flags & ASYNC_USR_MASK));
-        state->custom_divisor = new_serial.custom_divisor;
+        info->custom_divisor = new_serial.custom_divisor;
         goto check_and_exit;
     }
 
@@ -920,14 +875,14 @@ static int set_serial_info(struct async_struct * info,
      * At this point, we start making changes.....
      */
 
-    state->baud_base = new_serial.baud_base;
-    state->flags = ((state->flags & ~ASYNC_FLAGS) |
+    info->baud_base = new_serial.baud_base;
+    info->flags = ((info->flags & ~ASYNC_FLAGS) |
                     (new_serial.flags & ASYNC_FLAGS));
-    info->flags = ((state->flags & ~ASYNC_INTERNAL_FLAGS) |
+    info->flags = ((info->flags & ~ASYNC_INTERNAL_FLAGS) |
                    (info->flags & ASYNC_INTERNAL_FLAGS));
-    state->custom_divisor = new_serial.custom_divisor;
-    state->close_delay = new_serial.close_delay * HZ/100;
-    state->closing_wait = new_serial.closing_wait * HZ/100;
+    info->custom_divisor = new_serial.custom_divisor;
+    info->close_delay = new_serial.close_delay * HZ/100;
+    info->closing_wait = new_serial.closing_wait * HZ/100;
     info->tty->low_latency = (info->flags & ASYNC_LOW_LATENCY) ? 1 : 0;
 
     check_and_exit:
@@ -948,7 +903,7 @@ static int set_serial_info(struct async_struct * info,
  * 	    transmit holding register is empty.  This functionality
  * 	    allows an RS485 driver to be written in user space.
  */
-static int get_lsr_info(struct async_struct * info, unsigned int __user *value)
+static int get_lsr_info(struct serial_state * info, unsigned int __user *value)
 {
     unsigned char status;
     unsigned int result;
@@ -988,7 +943,7 @@ static int rs_break(struct tty_struct *tty, int break_state)
 
 static int set_hfuart_halfdup(struct tty_struct *tty, char __user * new_info)
 {
-	struct async_struct * info = (struct async_struct *)tty->driver_data;
+	struct serial_state * info = tty->driver_data;
 	unsigned char halfdup;
 	int err;
 	
@@ -1025,14 +980,15 @@ static int set_hfuart_halfdup(struct tty_struct *tty, char __user * new_info)
 }
 
 #define TIOCSETHALFDUP	0x5436
-static int rs_ioctl(struct tty_struct *tty, struct file * file,
+static int rs_ioctl(struct tty_struct *tty,
                     unsigned int cmd, unsigned long arg)
 {
-    struct async_struct * info = (struct async_struct *)tty->driver_data;
+    struct serial_state * info = tty->driver_data;
     struct async_icount cprev, cnow;    /* kernel counter temps */
     struct serial_icounter_struct icount;
     void __user *argp = (void __user *)arg;
     unsigned long flags;
+    DEFINE_WAIT(wait);
 
     if ((cmd != TIOCGSERIAL) && (cmd != TIOCSSERIAL) &&
         (cmd != TIOCSERCONFIG) && (cmd != TIOCSERGSTRUCT) &&
@@ -1055,7 +1011,7 @@ static int rs_ioctl(struct tty_struct *tty, struct file * file,
 #endif
     case TIOCSERGSTRUCT:
         if (copy_to_user(argp,
-                         info, sizeof(struct async_struct)))
+                         info, sizeof(struct serial_state)))
             return -EFAULT;
         return 0;
 
@@ -1068,16 +1024,14 @@ static int rs_ioctl(struct tty_struct *tty, struct file * file,
     case TIOCMIWAIT:
         local_irq_save(flags);
         /* note the counters on entry */
-        cprev = info->state->icount;
+        cprev = info->info->icount;
         local_irq_restore(flags);
         while (1)
         {
-            interruptible_sleep_on(&info->delta_msr_wait);
-            /* see if a signal did it */
-            if (signal_pending(current))
-                return -ERESTARTSYS;
+            prepare_to_wait(&info->tport.delta_msr_wait,
+                            &wait, TASK_INTERRUPTIBLE);
             local_irq_save(flags);
-            cnow = info->state->icount; /* atomic copy */
+            cnow = info->info->icount; /* atomic copy */
             local_irq_restore(flags);
             if (cnow.cts == cprev.cts)
                 return -EIO; /* no change => error */
@@ -1097,7 +1051,7 @@ static int rs_ioctl(struct tty_struct *tty, struct file * file,
          */
     case TIOCGICOUNT:
         local_irq_save(flags);
-        cnow = info->state->icount;
+        cnow = info->info->icount;
         local_irq_restore(flags);
         icount.cts = cnow.cts;
         icount.dsr = 0;
@@ -1129,12 +1083,12 @@ static int rs_ioctl(struct tty_struct *tty, struct file * file,
 
 static void rs_set_termios(struct tty_struct *tty, struct ktermios *old_termios)
 {
-    struct async_struct *info = (struct async_struct *)tty->driver_data;
+    struct serial_state *info = tty->driver_data;
     unsigned int cflag = tty->termios->c_cflag;
 #ifdef CONFIG_CHEETAH_UART_RTSCTS
     unsigned int frame_len = 10; //start(1) + data(8) + stop(1)
 	int err;
-	unsigned int irqflags = IRQF_DISABLED;
+	unsigned int irqflags = 0;
 
     /* update delay for CTS */
 #endif
@@ -1245,7 +1199,7 @@ static void rs_set_termios(struct tty_struct *tty, struct ktermios *old_termios)
 */
 static void rs_close(struct tty_struct *tty, struct file * filp)
 {
-    struct async_struct * info = (struct async_struct *)tty->driver_data;
+    struct serial_state * info = tty->driver_data;
     struct serial_state *state;
     unsigned long flags;
 
@@ -1263,32 +1217,32 @@ static void rs_close(struct tty_struct *tty, struct file * filp)
     }
 
 #ifdef CHEETAH_UART_DEBUG_OPEN
-    printk("rs_close ttys%d, count = %d\n", info->line, state->count);
+    printk("rs_close ttys%d, count = %d\n", info->line, info->count);
 #endif
-    if ((tty->count == 1) && (state->count != 1))
+    if ((tty->count == 1) && (info->count != 1))
     {
         /*
          * Uh, oh.  tty->count is 1, which means that the tty
-         * structure will be freed.  state->count should always
+         * structure will be freed.  info->count should always
          * be one in these conditions.  If it's greater than
          * one, we've got real problems, since it means the
          * serial port won't be shutdown.
          */
 #ifdef CHEETAH_UART_DEBUG_OPEN
         printk("rs_close: bad serial port count; tty->count is 1, "
-               "state->count is %d\n", state->count);
+               "info->count is %d\n", info->count);
 #endif
-        state->count = 1;
+        info->count = 1;
     }
-    if (--state->count < 0)
+    if (--info->count < 0)
     {
 #ifdef CHEETAH_UART_DEBUG_OPEN
         printk("rs_close: bad serial port count for ttys%d: %d\n",
-               info->line, state->count);
+               info->line, info->count);
 #endif
-        state->count = 0;
+        info->count = 0;
     }
-    if (state->count)
+    if (info->count)
     {
         local_irq_restore(flags);
         return;
@@ -1337,7 +1291,7 @@ static void rs_wait_until_sent(struct tty_struct *tty, int timeout)
 #if 1
     return;
 #else
-    struct async_struct * info = (struct async_struct *)tty->driver_data;
+    struct serial_state * info = tty->driver_data;
     unsigned long orig_jiffies, char_time;
     int lsr;
 
@@ -1402,162 +1356,33 @@ static void rs_wait_until_sent(struct tty_struct *tty, int timeout)
  */
 static void rs_hangup(struct tty_struct *tty)
 {
-    struct async_struct * info = (struct async_struct *)tty->driver_data;
-    struct serial_state *state = info->state;
+    struct serial_state * info = tty->driver_data;
 
     state = info->state;
 
     rs_flush_buffer(tty);
     shutdown(info);
-    state->count = 0;
+    info->count = 0;
     info->flags &= ~ASYNC_NORMAL_ACTIVE;
     info->tty = NULL;
     wake_up_interruptible(&info->open_wait);
 }
 
-/*
- * ------------------------------------------------------------
- * rs_open() and friends
- * ------------------------------------------------------------
- */
-static int block_til_ready(struct tty_struct *tty, struct file * filp,
-                           struct async_struct *info)
+static int get_serial_state(int line, struct serial_state **ret_info)
 {
-#ifdef DECLARE_WAITQUEUE
-    DECLARE_WAITQUEUE(wait, current);
-#else
-    struct wait_queue wait = { current, NULL};
-#endif
-    struct serial_state *state = info->state;
-    int     retval;
-    int     extra_count = 0; //do_clocal = 0,
-    unsigned long   flags;
-
-    /*
-     * If the device is in the middle of being closed, then block
-     * until it's done, and then try again.
-     */
-    if (tty_hung_up_p(filp) ||
-        (info->flags & ASYNC_CLOSING))
-    {
-        if (info->flags & ASYNC_CLOSING)
-            interruptible_sleep_on(&info->close_wait);
-#ifdef SERIAL_DO_RESTART
-        return((info->flags & ASYNC_HUP_NOTIFY) ?
-               -EAGAIN : -ERESTARTSYS);
-#else
-        return -EAGAIN;
-#endif
-    }
-
-    /*
-     * If non-blocking mode is set, or the port is not enabled,
-     * then make the check up front and then exit.
-     */
-    if ((filp->f_flags & O_NONBLOCK) ||
-        (tty->flags & (1 << TTY_IO_ERROR)))
-    {
-        info->flags |= ASYNC_NORMAL_ACTIVE;
-        return 0;
-    }
-
-#if 0
-    if (tty->termios->c_cflag & CLOCAL)
-        do_clocal = 1;
-#endif
-
-    /*
-     * Block waiting for the carrier detect and the line to become
-     * free (i.e., not in use by the callout).  While we are in
-     * this loop, state->count is dropped by one, so that
-     * rs_close() knows when to free things.  We restore it upon
-     * exit, either normal or abnormal.
-     */
-    retval = 0;
-    add_wait_queue(&info->open_wait, &wait);
-#ifdef CHEETAH_UART_DEBUG_OPEN
-    printk("block_til_ready before block: ttys%d, count = %d\n",
-           state->line, state->count);
-#endif
-    local_irq_save(flags);
-    if (!tty_hung_up_p(filp))
-    {
-        extra_count = 1;
-        state->count--;
-    }
-    local_irq_restore(flags);
-    info->blocked_open++;
-    while (1)
-    {
-if (1)
-break;
-#if 0
-        local_irq_save(flags);
-        if (tty->termios->c_cflag & CBAUD)
-            rtsdtr_ctrl(SER_DTR|SER_RTS);
-        local_irq_restore(flags);
-#endif
-        set_current_state(TASK_INTERRUPTIBLE);
-        if (tty_hung_up_p(filp) ||
-            !(info->flags & ASYNC_INITIALIZED))
-        {
-#ifdef SERIAL_DO_RESTART
-            if (info->flags & ASYNC_HUP_NOTIFY)
-                retval = -EAGAIN;
-            else
-                retval = -ERESTARTSYS;
-#else
-            retval = -EAGAIN;
-#endif
-            break;
-        }
-#if 0
-        if (!(info->flags & ASYNC_CLOSING) &&
-            (do_clocal || (!(ciab.pra & SER_DCD)) ))
-            break;
-#endif
-        if (signal_pending(current))
-        {
-            retval = -ERESTARTSYS;
-            break;
-        }
-#ifdef CHEETAH_UART_DEBUG_OPEN
-        printk("block_til_ready blocking: ttys%d, count = %d\n",
-               info->line, state->count);
-#endif
-        schedule();
-    }
-    __set_current_state(TASK_RUNNING);
-    remove_wait_queue(&info->open_wait, &wait);
-    if (extra_count)
-        state->count++;
-    info->blocked_open--;
-#ifdef CHEETAH_UART_DEBUG_OPEN
-    printk("block_til_ready after blocking: ttys%d, count = %d\n",
-           info->line, state->count);
-#endif
-    if (retval)
-        return retval;
-    info->flags |= ASYNC_NORMAL_ACTIVE;
-    return 0;
-}
-
-static int get_async_struct(int line, struct async_struct **ret_info)
-{
-    struct async_struct *info;
+    struct serial_state *info;
     struct serial_state *sstate;
 
-    sstate = rs_table + line;
-    sstate->count++;
-    if (sstate->info)
+    sinfo->count++;
+    if (sinfo->info)
     {
-        *ret_info = sstate->info;
+        *ret_info = sinfo->info;
         return 0;
     }
-    info = kzalloc(sizeof(struct async_struct), GFP_KERNEL);
+    info = kzalloc(sizeof(struct serial_state), GFP_KERNEL);
     if (!info)
     {
-        sstate->count--;
+        sinfo->count--;
         return -ENOMEM;
     }
 #ifdef DECLARE_WAITQUEUE
@@ -1565,19 +1390,19 @@ static int get_async_struct(int line, struct async_struct **ret_info)
     init_waitqueue_head(&info->close_wait);
     init_waitqueue_head(&info->delta_msr_wait);
 #endif
-    info->port = sstate->port;
-    info->flags = sstate->flags;
-    info->xmit_fifo_size = sstate->xmit_fifo_size;
+    info->port = sinfo->port;
+    info->flags = sinfo->flags;
+    info->xmit_fifo_size = sinfo->xmit_fifo_size;
     info->line = line;
     tasklet_init(&info->tlet, do_softint, (unsigned long)info);
     info->state = sstate;
-    if (sstate->info)
+    if (sinfo->info)
     {
         kfree(info);
-        *ret_info = sstate->info;
+        *ret_info = sinfo->info;
         return 0;
     }
-    *ret_info = sstate->info = info;
+    *ret_info = sinfo->info = info;
     return 0;
 }
 
@@ -1589,7 +1414,7 @@ static int get_async_struct(int line, struct async_struct **ret_info)
  */
 static int rs_open(struct tty_struct *tty, struct file * filp)
 {
-    struct async_struct *info;
+    struct tty_port *port = &info->tport;
     int             retval, line;
 
     line = tty->index;
@@ -1597,57 +1422,21 @@ static int rs_open(struct tty_struct *tty, struct file * filp)
     {
         return -ENODEV;
     }
-    retval = get_async_struct(line, &info);
+    retval = get_serial_state(line, &info);
     if (retval)
     {
         return retval;
     }
     tty->driver_data = info;
     info->tty = tty;
-#ifdef CHEETAH_UART_DEBUG_OPEN
-    printk("rs_open %s, count = %d\n", tty->name, info->state->count);
-#endif
-    info->tty->low_latency = (info->flags & ASYNC_LOW_LATENCY) ? 1 : 0;
+    tty->low_latency = (info->flags & ASYNC_LOW_LATENCY) ? 1 : 0;
 
-    /*
-     * If the port is the middle of closing, bail out now
-     */
-    if (tty_hung_up_p(filp) ||
-        (info->flags & ASYNC_CLOSING))
-    {
-        if (info->flags & ASYNC_CLOSING)
-            interruptible_sleep_on(&info->close_wait);
-#ifdef SERIAL_DO_RESTART
-        return((info->flags & ASYNC_HUP_NOTIFY) ?
-               -EAGAIN : -ERESTARTSYS);
-#else
-        return -EAGAIN;
-#endif
-    }
-
-    /*
-     * Start up serial port
-     */
     retval = startup(info);
-    if (retval)
-    {
+    if (retval) {
         return retval;
     }
 
-    retval = block_til_ready(tty, filp, info);
-    if (retval)
-    {
-#ifdef CHEETAH_UART_DEBUG_OPEN
-        printk("rs_open returning after block_til_ready with %d\n",
-               retval);
-#endif
-        return retval;
-    }
-
-#ifdef CHEETAH_UART_DEBUG_OPEN
-    printk("rs_open %s successful...", tty->name);
-#endif
-    return 0;
+    return tty_port_block_til_ready(port, tty, filp);
 }
 
 #ifdef CONFIG_CHEETAH_UART_STAT
@@ -1657,7 +1446,7 @@ static int rs_open(struct tty_struct *tty, struct file * filp)
 
 static inline void line_info(struct seq_file *m, struct serial_state *state)
 {
-	struct async_struct *info = state->info, scr_info;
+	struct serial_state *info = info->info, scr_info;
 #ifdef CONFIG_CHEETAH_UART_RTSCTS
 	char	stat_buf[10];
 #endif
@@ -1668,7 +1457,7 @@ static inline void line_info(struct seq_file *m, struct serial_state *state)
 	if (!info) {
 		info = &scr_info;	/* This is just for serial_{in,out} */
 
-		info->flags = state->flags;
+		info->flags = info->flags;
 		info->quot = 0;
 		info->tty = NULL;
 	}
@@ -1684,22 +1473,22 @@ static inline void line_info(struct seq_file *m, struct serial_state *state)
 #endif
 
 	if (info->quot) {
-		seq_printf(m, " baud:%d", state->baud_base / info->quot);
+		seq_printf(m, " baud:%d", info->baud_base / info->quot);
 	}
 
-	seq_printf(m, " tx:%d rx:%d", state->icount.tx, state->icount.rx);
+	seq_printf(m, " tx:%d rx:%d", info->icount.tx, info->icount.rx);
 
-	if (state->icount.frame)
-		seq_printf(m, " fe:%d", state->icount.frame);
+	if (info->icount.frame)
+		seq_printf(m, " fe:%d", info->icount.frame);
 
-	if (state->icount.parity)
-		seq_printf(m, " pe:%d", state->icount.parity);
+	if (info->icount.parity)
+		seq_printf(m, " pe:%d", info->icount.parity);
 
-	if (state->icount.brk)
-		seq_printf(m, " brk:%d", state->icount.brk);
+	if (info->icount.brk)
+		seq_printf(m, " brk:%d", info->icount.brk);
 
-	if (state->icount.overrun)
-		seq_printf(m, " oe:%d", state->icount.overrun);
+	if (info->icount.overrun)
+		seq_printf(m, " oe:%d", info->icount.overrun);
 
 #ifdef CONFIG_CHEETAH_UART_RTSCTS
 	if (ctsrts_en)
@@ -1858,7 +1647,7 @@ static int __init cheetah_rs_init(void)
     state->close_delay = 5*HZ/10;
     state->closing_wait = 30*HZ;
     state->icount.cts = state->icount.dsr =
-                        state->icount.rng = state->icount.dcd = 0;
+     state->icount.rng = state->icount.dcd = 0;
     state->icount.rx = state->icount.tx = 0;
     state->icount.frame = state->icount.parity = 0;
     state->icount.overrun = state->icount.brk = 0;
@@ -1869,7 +1658,7 @@ static int __init cheetah_rs_init(void)
     state->xmit_fifo_size = 16;
     local_irq_save(flags);
 
-    if (0 > request_irq( IRQ_UR, cta_uart_interrupt, IRQF_DISABLED, "UART", state))
+    if (0 > request_irq( IRQ_UR, cta_uart_interrupt, 0, "UART", state))
         panic("Couldn't request IRQ for UART device\n");
 
 #ifdef CONFIG_CHEETAH_UART_RTSCTS
@@ -1882,7 +1671,7 @@ static int __init cheetah_rs_init(void)
 		panic("Couldn't request GPIO for UART RTS\n");
 	gpio_direction_output(CONFIG_CHEETAH_UART_RTS_GPIO_NUM, 1);
 
-	if (0 > request_irq(IRQ_GPIOX, cta_cts, IRQF_DISABLED, "UART CTS", NULL))
+	if (0 > request_irq(IRQ_GPIOX, cta_cts, 0, "UART CTS", NULL))
 		panic("Couldn't request IRQ for UART CTS\n");
 	disable_irq(IRQ_GPIOX);
 #endif
@@ -1894,7 +1683,7 @@ static int __init cheetah_rs_init(void)
 static __exit void cheetah_rs_exit(void)
 {
     int error;
-    struct async_struct *info = rs_table[0].info;
+    struct serial_state *info = rs_table[0].info;
 
 #ifdef CONFIG_CHEETAH_UART_RTSCTS
 	if (ctsrts_en) {
