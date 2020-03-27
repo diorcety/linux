@@ -18,7 +18,6 @@
 #include <asm/bootinfo.h>
 #include <asm/io.h>
 #include <asm/mipsregs.h>
-#include <asm/system.h>
 #include <asm/mach-cheetah/irq.h>
 #include <asm/mach-cheetah/cheetah.h>
 

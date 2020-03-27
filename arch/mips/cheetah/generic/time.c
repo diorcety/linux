@@ -121,33 +121,41 @@ unsigned long long notrace sched_clock(void)
 }
 #endif
 
-static void camelot_set_state_shutdown(struct clock_event_device *evt)
+static int camelot_set_state_shutdown(struct clock_event_device *evt)
 {
     volatile unsigned int *pt = (unsigned int *) TM_BASE;
 
     pt[TIMER_CN] &= ~TCN_BIT_INTR_ENABLE;
+
+    return 0;
 }
 
-static void camelot_set_state_periodic(struct clock_event_device *evt)
+static int camelot_set_state_periodic(struct clock_event_device *evt)
 {
     volatile unsigned int *pt = (unsigned int *) TM_BASE;
 
     pt[TIMER_CN] |= (TCN_BIT_AUTO_RELOAD | TCN_BIT_INTR_ENABLE);
+
+    return 0;
 }
 
-static void camelot_set_state_oneshot(struct clock_event_device *evt)
+static int camelot_set_state_oneshot(struct clock_event_device *evt)
 {
     volatile unsigned int *pt = (unsigned int *) TM_BASE;
 
     pt[TIMER_CN] &= ~TCN_BIT_AUTO_RELOAD;
     pt[TIMER_CN] |= TCN_BIT_INTR_ENABLE;
+
+    return 0;
 }
 
-static void camelot_tick_resume(struct clock_event_device *evt)
+static int camelot_tick_resume(struct clock_event_device *evt)
 {
     volatile unsigned int *pt = (unsigned int *) TM_BASE;
 
     pt[TIMER_CN] |= TCN_BIT_INTR_ENABLE;
+
+    return 0;
 }
 
 #if defined(CONFIG_NO_HZ)
@@ -183,6 +191,7 @@ struct clock_event_device camelot_clockevent = {
     .irq        = CHEETAH_TIMER_IRQ,
     .set_state_periodic = camelot_set_state_periodic,
     .set_state_oneshot = camelot_set_state_oneshot,
+    .set_state_oneshot_stopped = camelot_set_state_shutdown,
     .set_state_shutdown = camelot_set_state_shutdown,
     .tick_resume = camelot_tick_resume,
     .mult       = 1,
@@ -223,7 +232,7 @@ __init void camelot_timer_init(void)
     pt[TIMER_CN] = (TCN_BIT_INTR_ENABLE|TCN_BIT_GO);
 }
 
-static cycle_t camelot_timer_read(struct clocksource *cs)
+static u64 camelot_timer_read(struct clocksource *cs)
 {
     volatile unsigned int *pt = (unsigned int *) TM_BASE;
 
