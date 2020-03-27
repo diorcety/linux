@@ -10,7 +10,6 @@
 
 #include <asm/bootinfo.h>
 #include <asm/io.h>
-#include <asm/system.h>
 #include <asm/cacheflush.h>
 #include <asm/traps.h>
 
@@ -102,14 +101,14 @@ void  __init prom_init_cmdline(void)
     if(0)
 #endif
     {
-	memcpy( arcs_cmdline, (void *) BOOT_CMDLINE_DRAM_ADDR, CL_SIZE);
+	memcpy( arcs_cmdline, (void *) BOOT_CMDLINE_DRAM_ADDR, COMMAND_LINE_SIZE);
     }
     else
     {
 	strcpy( arcs_cmdline, CONFIG_CMDLINE);
     }
 
-    arcs_cmdline[CL_SIZE-1] = 0;
+    arcs_cmdline[COMMAND_LINE_SIZE-1] = 0;
 }
 
 unsigned int CPU_CLK = DEFAULT_CPU_CLK;
