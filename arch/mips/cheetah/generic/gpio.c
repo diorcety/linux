@@ -334,12 +334,11 @@ err:
 static int camelot_gpio_remove(struct platform_device *pdev)
 {
 	struct camelot_gpio *camelot_gpio = platform_get_drvdata(pdev);
-	int ret;
 
 	gpiochip_remove(&camelot_gpio->gpio_chip);
 	kfree(camelot_gpio);
 
-	return ret;
+	return 0;
 }
 
 static struct platform_driver camelot_gpio_driver = {
