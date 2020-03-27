@@ -162,9 +162,10 @@ int mem_enter_cmd (struct seq_file *s, int argc, char *argv[])
         goto err1;
 
     addr &= ~(step - 1);
-    if (vaddr_check(addr))
+    if (vaddr_check(addr)) {
         goto err2;
-	for (i = 0; i < size; i += step) {
+    }
+    for (i = 0; i < size; i += step) {
 		caddr = addr + i;
         switch (step) {
         case 1:
@@ -257,7 +258,7 @@ static int reg_open(struct inode *inode, struct file *file)
 static const struct file_operations reg_fops = {
     .open       = reg_open,
     .read       = seq_read,
-	.write		= reg_write,
+    .write      = reg_write,
     .llseek     = seq_lseek,
     .release    = single_release,
 };
@@ -267,14 +268,12 @@ static int __init init(void)
 #ifdef	CONFIG_PROC_FS
 	struct proc_dir_entry *res;
 
-	res = create_proc_entry(REG_NAME, S_IWUSR | S_IRUGO, NULL);
+	res = proc_create(REG_NAME, S_IWUSR | S_IRUGO, NULL, &reg_fops);
 	if (!res)
 		return -ENOMEM;
-
-	res->proc_fops = &reg_fops;
 #endif
 
-	return 0 ;
+	return 0;
 }
 
 static void __exit fini(void)

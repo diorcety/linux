@@ -3,6 +3,8 @@
  */
 #ifdef CONFIG_PROC_FS
 /* #define DEBUG */
+#include <linux/init.h>
+#include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/proc_fs.h>
 #include <linux/uaccess.h> //copy_from_user
@@ -175,24 +177,20 @@ static void cheetah_power_control(CHEETAH_PD pd, CHEETAH_PD_CTRL ctrl)
 	}
 }
 
-static int proc_cpupwr_read(char *page, char **start, off_t off, int count, int *eof, void *data)
+static int proc_cpupwr_show(struct seq_file *m, void *v)
 {
-	char *p = page;
-	int len;
+	seq_printf(m, "power control entry\n");
 
-	p += sprintf(p, "power control entry\n");
-
-	len = (p - page) - off;
-	if (len < 0)
-		len = 0;
-
-	*eof = (len <= count) ? 1 : 0;
-	*start = page + off;
-
-	return len;
+	return 0;
 }
 
-static int proc_cpupwr_write(struct file *file, const char *buffer, unsigned long count, void *data)
+static int proc_cpupwr_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, proc_cpupwr_show, NULL);
+}
+
+static ssize_t proc_cpupwr_write(struct file *file,
+		const char __user *buffer, size_t count, loff_t *pos)
 {
 	char buf[CMD_STRING_LEN_MAX];
 	int argc;
@@ -200,7 +198,7 @@ static int proc_cpupwr_write(struct file *file, const char *buffer, unsigned lon
 	extern int get_args (const char *string, char *argvs[]);
 	CHEETAH_PD_CTRL pd_cmd = PD_CTRL_ON;
 
-	pr_debug("%s() start %s %s\n", __func__, __DATE__, __TIME__);
+	pr_debug("%s() start\n", __func__);
 
 	if ((count == 0) || (count > CMD_STRING_LEN_MAX)) {
 		pr_err("%s() err %d\n", __func__, __LINE__);
@@ -254,13 +252,22 @@ static int proc_cpupwr_write(struct file *file, const char *buffer, unsigned lon
 		}
 	}
 
-	pr_debug("%s() end %s %s\n", __func__, __DATE__, __TIME__);
+	pr_debug("%s() end\n", __func__);
 	return count;
 
 err:
 	pr_err("Wrong parameter! \n");
 	return count;
 }
+
+static const struct file_operations proc_cpupwr_ops = {
+       .owner          = THIS_MODULE,
+       .open           = proc_cpupwr_open,
+       .read           = seq_read,
+       .llseek         = seq_lseek,
+       .release        = single_release,
+       .write          = proc_cpupwr_write,
+};
 
 static int __init plat_pwr_init(void)
 {
@@ -270,13 +277,11 @@ static int __init plat_pwr_init(void)
 	for (i = 0; i < PD_MAX; i++)
 		pd_state[i] = PD_ON;
 
-	res = create_proc_entry(PWR_PROC_ENTRY_NAME, S_IRUGO, NULL);
+	res = proc_create(PWR_PROC_ENTRY_NAME, S_IRUGO, NULL, &proc_cpupwr_ops);
 	if (!res) {
 		pr_err("create_proc_entry() failed [%s]\n", PWR_PROC_ENTRY_NAME);
 		return -ENOMEM;
 	}
-	res->read_proc = proc_cpupwr_read;
-	res->write_proc = proc_cpupwr_write;
 
 	pr_info("%s() successful\n", __func__);
 	return 0;
