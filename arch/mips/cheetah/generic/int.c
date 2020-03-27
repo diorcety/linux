@@ -178,7 +178,7 @@ void __init init_cheetah_irqs(void)
     /* Initialize IRQ action handlers */
     for (i = 0; i < NR_IRQS; i++)
     {
-        set_irq_chip_and_handler(i, &cheetah_irq_controller, handle_level_irq);
+        irq_set_chip_and_handler(i, &cheetah_irq_controller, handle_level_irq);
     }
 
     /* Enable all interrupts */

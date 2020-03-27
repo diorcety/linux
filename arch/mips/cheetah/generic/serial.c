@@ -25,7 +25,6 @@
 #include <linux/errno.h>
 #include <linux/signal.h>
 #include <linux/sched.h>
-#include <linux/smp_lock.h>
 #include <linux/kernel.h>
 #include <linux/timer.h>
 #include <linux/interrupt.h>
@@ -44,7 +43,6 @@
 #include <linux/init.h>
 #include <linux/bitops.h>
 
-#include <asm/system.h>
 #include <asm/irq.h>
 #include <asm/mach-cheetah/cheetah.h>
 #ifdef CONFIG_CHEETAH_UART_RTSCTS
