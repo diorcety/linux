@@ -121,31 +121,33 @@ unsigned long long notrace sched_clock(void)
 }
 #endif
 
-
-static void camelot_set_mode(enum clock_event_mode mode, struct clock_event_device *evt)
+static void camelot_set_state_shutdown(struct clock_event_device *evt)
 {
     volatile unsigned int *pt = (unsigned int *) TM_BASE;
 
-    switch(mode) 
-    {
-        case CLOCK_EVT_MODE_SHUTDOWN:
-            pt[TIMER_CN] &= ~TCN_BIT_INTR_ENABLE;
-            break;
-        case CLOCK_EVT_MODE_PERIODIC:
-            pt[TIMER_CN] |= (TCN_BIT_AUTO_RELOAD | TCN_BIT_INTR_ENABLE);
-            break;
-        case CLOCK_EVT_MODE_ONESHOT:
-            pt[TIMER_CN] &= ~TCN_BIT_AUTO_RELOAD;
-            pt[TIMER_CN] |= TCN_BIT_INTR_ENABLE;
-            break;
-        case CLOCK_EVT_MODE_RESUME:
-            pt[TIMER_CN] |= TCN_BIT_INTR_ENABLE;
-            break;
-        default:
-            break;
-    }
+    pt[TIMER_CN] &= ~TCN_BIT_INTR_ENABLE;
+}
 
-    return;
+static void camelot_set_state_periodic(struct clock_event_device *evt)
+{
+    volatile unsigned int *pt = (unsigned int *) TM_BASE;
+
+    pt[TIMER_CN] |= (TCN_BIT_AUTO_RELOAD | TCN_BIT_INTR_ENABLE);
+}
+
+static void camelot_set_state_oneshot(struct clock_event_device *evt)
+{
+    volatile unsigned int *pt = (unsigned int *) TM_BASE;
+
+    pt[TIMER_CN] &= ~TCN_BIT_AUTO_RELOAD;
+    pt[TIMER_CN] |= TCN_BIT_INTR_ENABLE;
+}
+
+static void camelot_tick_resume(struct clock_event_device *evt)
+{
+    volatile unsigned int *pt = (unsigned int *) TM_BASE;
+
+    pt[TIMER_CN] |= TCN_BIT_INTR_ENABLE;
 }
 
 #if defined(CONFIG_NO_HZ)
@@ -179,7 +181,10 @@ struct clock_event_device camelot_clockevent = {
 #endif
     .rating     = 100,
     .irq        = CHEETAH_TIMER_IRQ,
-    .set_mode   = camelot_set_mode,
+    .set_state_periodic = camelot_set_state_periodic,
+    .set_state_oneshot = camelot_set_state_oneshot,
+    .set_state_shutdown = camelot_set_state_shutdown,
+    .tick_resume = camelot_tick_resume,
     .mult       = 1,
 #if defined(CONFIG_NO_HZ)
     .set_next_event	= camelot_next_event,
