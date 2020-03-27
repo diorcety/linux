@@ -4,7 +4,8 @@
 #include <linux/module.h>
 #include <linux/platform_device.h>
 #include <linux/proc_fs.h>
-#include <asm/system.h>
+#include <linux/uaccess.h>
+#include <linux/seq_file.h>
 #include <asm/mach-cheetah/cheetah.h>
 #include <asm/mach-cheetah/gpio.h>
 
@@ -301,7 +302,7 @@ static struct gpio_chip template_chip = {
     .can_sleep        = 1,
 };
 
-static int __devinit camelot_gpio_probe(struct platform_device *pdev)
+static int camelot_gpio_probe(struct platform_device *pdev)
 {
 	struct camelot_gpio *camelot_gpio;
 	int ret;
@@ -311,7 +312,7 @@ static int __devinit camelot_gpio_probe(struct platform_device *pdev)
 		return -ENOMEM;
     camelot_gpio->gpio_chip = template_chip;
 	camelot_gpio->gpio_chip.ngpio = CHEETAH_GPIO_LINES;
-	camelot_gpio->gpio_chip.dev = &pdev->dev;
+	camelot_gpio->gpio_chip.parent = &pdev->dev;
     camelot_gpio->gpio_chip.base = 0;
 
 	ret = gpiochip_add(&camelot_gpio->gpio_chip);
@@ -330,14 +331,13 @@ err:
 	return ret;
 }
 
-static int __devexit camelot_gpio_remove(struct platform_device *pdev)
+static int camelot_gpio_remove(struct platform_device *pdev)
 {
 	struct camelot_gpio *camelot_gpio = platform_get_drvdata(pdev);
 	int ret;
 
-	ret = gpiochip_remove(&camelot_gpio->gpio_chip);
-	if (ret == 0)
-		kfree(camelot_gpio);
+	gpiochip_remove(&camelot_gpio->gpio_chip);
+	kfree(camelot_gpio);
 
 	return ret;
 }
@@ -346,7 +346,7 @@ static struct platform_driver camelot_gpio_driver = {
 	.driver.name	= "cta-gpio",
 	.driver.owner	= THIS_MODULE,
 	.probe		= camelot_gpio_probe,
-	.remove		= __devexit_p(camelot_gpio_remove),
+	.remove		= camelot_gpio_remove,
 };
 #endif
 
@@ -370,10 +370,9 @@ struct pinmux_cmd pinmux_cmd_tb[] = {
     { "PCM0", "pcm0", EN_PCM0_FNC, EN_PCM0_FNC },
     { "PCM1", "pcm1", EN_PCM1_FNC, EN_PCM1_FNC },
 };
-static int proc_pinmux_read(char *page, char **start, off_t off, int count, int *eof, void *data)
+
+static int camelot_proc_show(struct seq_file *m, void *v)
 {
-    char *p = page;
-    int len;
     unsigned int reg = GPREG(PINMUX);
     struct gpio_info *info;
     int info_count;
@@ -381,20 +380,20 @@ static int proc_pinmux_read(char *page, char **start, off_t off, int count, int 
     int dir;
     int i;
 
-    p += sprintf(p, "Current PinMux Status:\n");
+    seq_printf(m, "Current PinMux Status:\n");
 
     for (i=0;i<sizeof(pinmux_cmd_tb)/sizeof(struct pinmux_cmd);i++) {
         if (!(reg & EN_SIP_FNC)) {
             // SDR mode
-            p += sprintf(p, "%s\n", (reg & pinmux_cmd_tb[i].sdr_reg) ? pinmux_cmd_tb[i].name : pinmux_cmd_tb[i].dname);
+            seq_printf(m, "%s\n", (reg & pinmux_cmd_tb[i].sdr_reg) ? pinmux_cmd_tb[i].name : pinmux_cmd_tb[i].dname);
         }
         else {
             // DDR mode
-            p += sprintf(p, "%s\n", (reg & pinmux_cmd_tb[i].ddr_reg) ? pinmux_cmd_tb[i].name : pinmux_cmd_tb[i].dname);
+            seq_printf(m, "%s\n", (reg & pinmux_cmd_tb[i].ddr_reg) ? pinmux_cmd_tb[i].name : pinmux_cmd_tb[i].dname);
         }
     }
 
-    p += sprintf(p, "Current GPIO Status:\n");
+    seq_printf(m, "Current GPIO Status:\n");
 
     if (!(reg & EN_SIP_FNC)) {
         // SDR mode
@@ -422,33 +421,32 @@ static int proc_pinmux_read(char *page, char **start, off_t off, int count, int 
 
         switch(dir) {
             case GPIO_IN:
-                p += sprintf(p, "%s%d\t", (en) ? "GPI" : "gpi", info[i].idx);
+                seq_printf(m, "%s%d\t", (en) ? "GPI" : "gpi", info[i].idx);
                 break;
             case GPIO_OUT:
-                p += sprintf(p, "%s%d\t", (en) ? "GPO" : "gpo", info[i].idx);
+                seq_printf(m, "%s%d\t", (en) ? "GPO" : "gpo", info[i].idx);
                 break;
             case GPIO_IO:
-                p += sprintf(p, "%s%d\t", (en) ? "GPIO" : "gpio", info[i].idx);
+                seq_printf(m, "%s%d\t", (en) ? "GPIO" : "gpio", info[i].idx);
                 break;
             default:
                 break;
         }
 
         if ((i % 4) == 3)
-            p += sprintf(p, "\n");
+            seq_printf(m, "\n");
     }
 
-    len = (p - page) - off;
-    if (len < 0)
-        len = 0;
-
-    *eof = (len <= count) ? 1 : 0;
-    *start = page + off;
-
-    return len;
+    return 0;
 }
 
-static int proc_pinmux_write(struct file *file, const char *buffer, unsigned long count, void *data)
+static int camelot_proc_open(struct inode *inode, struct file *file)
+{
+    return single_open(file, camelot_proc_show, NULL);
+}
+
+static ssize_t camelot_proc_write(struct file *file,
+               const char __user *buffer, size_t count, loff_t *pos)
 {
     char buf[300];
     unsigned int reg = GPREG(PINMUX);
@@ -495,16 +493,22 @@ static int proc_pinmux_write(struct file *file, const char *buffer, unsigned lon
     return count;
 }
 
+static const struct file_operations camelot_proc_ops = {
+       .owner          = THIS_MODULE,
+       .open           = camelot_proc_open,
+       .read           = seq_read,
+       .llseek         = seq_lseek,
+       .release        = single_release,
+       .write          = camelot_proc_write,
+};
+
 static int __init camelot_gpio_init(void)
 {
     struct proc_dir_entry *res;
 
-    res = create_proc_entry("pinmux", S_IWUSR | S_IRUGO, NULL);
+    res = proc_create("pinmux", S_IWUSR | S_IRUGO, NULL, &camelot_proc_ops);
     if (!res)
         return -ENOMEM;
-
-    res->read_proc = proc_pinmux_read;
-    res->write_proc = proc_pinmux_write;
 
 #ifdef CONFIG_GPIOLIB
     return platform_driver_register(&camelot_gpio_driver);

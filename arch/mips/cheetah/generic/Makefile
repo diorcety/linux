@@ -3,7 +3,7 @@
 #
 EXTRA_CFLAGS += -Werror
 NOSTDINC_FLAGS += -I$(src)/../wla/include/
-obj-$(CONFIG_CHEETAH) += init.o setup.o reset.o prom.o time.o int.o serial.o gpio.o platform.o register.o mactbl.o clk.o pwr.o
+obj-$(CONFIG_CHEETAH) += init.o setup.o reset.o prom.o time.o int.o gpio.o platform.o register.o mactbl.o clk.o pwr.o serial.o
 
 obj-$(CONFIG_CHEETAH_INTERNAL_DEBUGGER)	+= idb.o
 
