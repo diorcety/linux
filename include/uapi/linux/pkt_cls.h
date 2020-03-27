@@ -66,7 +66,8 @@ enum {
 	TCA_ID_UNSPEC=0,
 	TCA_ID_POLICE=1,
 	/* other actions go here */
-	__TCA_ID_MAX=255
+	TCA_ID_CTINFO=27,
+	__TCA_ID_MAX = 255
 };
 
 #define TCA_ID_MAX __TCA_ID_MAX

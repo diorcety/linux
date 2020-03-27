@@ -1123,6 +1123,14 @@ static const struct nla_policy ct_nla_policy[CTA_MAX+1] = {
 				    .len = NF_CT_LABELS_MAX_SIZE },
 };
 
+static int ctnetlink_flush_iterate(struct nf_conn *ct, void *data)
+{
+	if (test_bit(IPS_OFFLOAD_BIT, &ct->status))
+		return 0;
+
+	return ctnetlink_filter_match(ct, data);
+}
+
 static int ctnetlink_flush_conntrack(struct net *net,
 				     const struct nlattr * const cda[],
 				     u32 portid, int report)
@@ -1135,7 +1143,7 @@ static int ctnetlink_flush_conntrack(struct net *net,
 			return PTR_ERR(filter);
 	}
 
-	nf_ct_iterate_cleanup_net(net, ctnetlink_filter_match, filter,
+	nf_ct_iterate_cleanup_net(net, ctnetlink_flush_iterate, filter,
 				  portid, report);
 	kfree(filter);
 
@@ -1180,6 +1188,11 @@ static int ctnetlink_del_conntrack(struct net *net, struct sock *ctnl,
 		return -ENOENT;
 
 	ct = nf_ct_tuplehash_to_ctrack(h);
+
+	if (test_bit(IPS_OFFLOAD_BIT, &ct->status)) {
+		nf_ct_put(ct);
+		return -EBUSY;
+	}
 
 	if (cda[CTA_ID]) {
 		__be32 id = nla_get_be32(cda[CTA_ID]);

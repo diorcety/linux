@@ -3,8 +3,9 @@
 # 
 
 menuconfig NET_SCHED
-	bool "QoS and/or fair queueing"
+	def_bool y
 	select NET_SCH_FIFO
+	select NET_SCH_FQ_CODEL
 	---help---
 	  When the kernel has several packets to send out over a network
 	  device, it has to decide which ones to send first, which ones to
@@ -807,6 +808,19 @@ config NET_ACT_CONNMARK
 
 	  To compile this code as a module, choose M here: the
 	  module will be called act_connmark.
+
+config NET_ACT_CTINFO
+        tristate "Netfilter Connmark to DSCP Retriever"
+        depends on NET_CLS_ACT && NETFILTER && IP_NF_IPTABLES
+        depends on NF_CONNTRACK && NF_CONNTRACK_MARK
+        help
+	  Say Y here to allow transfer of a connmark stored DSCP into
+	  ipv4/v6 diffserv
+
+	  If unsure, say N.
+
+	  To compile this code as a module, choose M here: the
+	  module will be called act_ctinfo.
 
 config NET_ACT_SKBMOD
         tristate "skb data modification action"
