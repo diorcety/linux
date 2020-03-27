@@ -49,8 +49,25 @@
 	#include <asm/mach-cheetah/gpio.h>
 #endif
 
+
 #define DRV_NAME "ttyS"
 extern void idelay(unsigned int count);
+
+struct serial_state {
+       int     baud_base;
+       unsigned long   port;
+       int     irq;
+       int     flags;
+       int     type;
+       int     line;
+       int     xmit_fifo_size;
+       int     custom_divisor;
+       int     count;
+       unsigned short  close_delay;
+       unsigned short  closing_wait; /* time to wait before closing */
+       struct async_icount     icount;
+       struct async_struct *info;
+};
 
 #define URCS_CTRL_MASK   (~((unsigned int)(1<<URCS_BRSHFT)-1)|URCS_TIE|URCS_RIE|URCS_PE|URCS_EVEN)
 #define URCS_ENABLE(bitmap)  {\
@@ -502,7 +519,7 @@ static void do_softint(unsigned long private_)
  * ---------------------------------------------------------------
  */
 
-static int startup(struct serial_state * info)
+static int startup(struct tty_struct *tty, struct serial_state *info)
 {
     unsigned long flags;
     int retval=0;
@@ -714,6 +731,8 @@ static int rs_write_room(struct tty_struct *tty)
 {
     struct serial_state *info = tty->driver_data;
 
+    if (serial_paranoia_check(info, tty->name, "rs_write_room"))
+            return 0;
     return CIRC_SPACE(info->xmit.head, info->xmit.tail, SERIAL_XMIT_SIZE);
 }
 
@@ -721,6 +740,8 @@ static int rs_chars_in_buffer(struct tty_struct *tty)
 {
     struct serial_state *info = tty->driver_data;
 
+    if (serial_paranoia_check(info, tty->name, "rs_chars_in_buffer"))
+            return 0;
     return CIRC_CNT(info->xmit.head, info->xmit.tail, SERIAL_XMIT_SIZE);
 }
 
@@ -729,6 +750,8 @@ static void rs_flush_buffer(struct tty_struct *tty)
     struct serial_state *info = tty->driver_data;
     unsigned long flags;
 
+    if (serial_paranoia_check(info, tty->name, "rs_flush_buffer"))
+            return;
     local_irq_save(flags);
     info->xmit.head = info->xmit.tail = 0;
     local_irq_restore(flags);
@@ -770,6 +793,9 @@ static void rs_throttle(struct tty_struct * tty)
            tty->ldisc.chars_in_buffer(tty));
 #endif
 
+    if (serial_paranoia_check(info, tty->name, "rs_throttle"))
+            return;
+
     if (I_IXOFF(tty))
         rs_send_xchar(tty, STOP_CHAR(tty));
 }
@@ -784,6 +810,9 @@ static void rs_unthrottle(struct tty_struct * tty)
     printk("unthrottle %s: %d....\n", tty_name(tty, buf),
            tty->ldisc.chars_in_buffer(tty));
 #endif
+
+    if (serial_paranoia_check(info, tty->name, "rs_unthrottle"))
+            return;
 
     if (I_IXOFF(tty))
     {
@@ -927,7 +956,11 @@ static int get_lsr_info(struct serial_state * info, unsigned int __user *value)
  */
 static int rs_break(struct tty_struct *tty, int break_state)
 {
+    struct serial_state *info = tty->driver_data;
     unsigned long flags;
+
+    if (serial_paranoia_check(info, tty->name, "rs_break"))
+            return -EINVAL;
 
     local_irq_save(flags);
 #if 0
@@ -989,6 +1022,9 @@ static int rs_ioctl(struct tty_struct *tty,
     void __user *argp = (void __user *)arg;
     unsigned long flags;
     DEFINE_WAIT(wait);
+
+    if (serial_paranoia_check(info, tty->name, "rs_ioctl"))
+            return -ENODEV;
 
     if ((cmd != TIOCGSERIAL) && (cmd != TIOCSSERIAL) &&
         (cmd != TIOCSERCONFIG) && (cmd != TIOCSERGSTRUCT) &&
@@ -1199,14 +1235,11 @@ static void rs_set_termios(struct tty_struct *tty, struct ktermios *old_termios)
 */
 static void rs_close(struct tty_struct *tty, struct file * filp)
 {
-    struct serial_state * info = tty->driver_data;
-    struct serial_state *state;
+    struct serial_state *state = tty->driver_data;
     unsigned long flags;
 
-    if (!info)
-        return;
-
-    state = info->state;
+    if (!state || serial_paranoia_check(state, tty->name, "rs_close"))
+            return;
 
     local_irq_save(flags);
 
@@ -1295,6 +1328,9 @@ static void rs_wait_until_sent(struct tty_struct *tty, int timeout)
     unsigned long orig_jiffies, char_time;
     int lsr;
 
+    if (serial_paranoia_check(info, tty->name, "rs_wait_until_sent"))
+            return;
+
     if (info->xmit_fifo_size == 0)
         return; /* Just in case.... */
 
@@ -1358,7 +1394,8 @@ static void rs_hangup(struct tty_struct *tty)
 {
     struct serial_state * info = tty->driver_data;
 
-    state = info->state;
+    if (serial_paranoia_check(info, tty->name, "rs_hangup"))
+            return;
 
     rs_flush_buffer(tty);
     shutdown(info);
@@ -1414,24 +1451,20 @@ static int get_serial_state(int line, struct serial_state **ret_info)
  */
 static int rs_open(struct tty_struct *tty, struct file * filp)
 {
+    struct serial_state *info = rs_table + tty->index;
     struct tty_port *port = &info->tport;
-    int             retval, line;
+    int retval;
 
-    line = tty->index;
-    if ((line < 0) || (line >= NR_PORTS))
-    {
-        return -ENODEV;
-    }
-    retval = get_serial_state(line, &info);
-    if (retval)
-    {
-        return retval;
-    }
+    port->count++;
+    port->tty = tty;
     tty->driver_data = info;
-    info->tty = tty;
-    tty->low_latency = (info->flags & ASYNC_LOW_LATENCY) ? 1 : 0;
+    tty->port = port;
+    if (serial_paranoia_check(info, tty->name, "rs_open"))
+            return -ENODEV;
 
-    retval = startup(info);
+    port->low_latency = (info->flags & ASYNC_LOW_LATENCY) ? 1 : 0;
+
+    retval = startup(tty, info);
     if (retval) {
         return retval;
     }
