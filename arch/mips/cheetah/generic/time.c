@@ -261,9 +261,7 @@ int __init init_camelot_clocksource(void)
 	/* Calculate a somewhat reasonable rating value */
 	clocksource_camelot.rating = 200;
 
-	clocksource_set_clock(&clocksource_camelot, ONE_MHZ);
-
-	clocksource_register(&clocksource_camelot);
+	clocksource_register_hz(&clocksource_camelot, ONE_MHZ);
 
 	return 0;
 }
@@ -302,7 +300,7 @@ static irqreturn_t camelot_timer_interrupt(int irq, void *dev_id)
 
 static struct irqaction camelot_timer_irqaction = {
     .handler    = camelot_timer_interrupt,
-    .flags      = IRQF_DISABLED,
+    .flags      = 0,
 //  .mask       = CPU_MASK_NONE,
     .name       = "TIMER",
 };
