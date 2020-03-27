@@ -57,30 +57,33 @@ asmlinkage void plat_irq_dispatch(void)
 
 static DEFINE_SPINLOCK(cheetah_irq_lock);
 
-static inline void cheetah_mask_irq(unsigned int irq_nr)
+static inline void cheetah_mask_irq(struct irq_data *data)
 {
     unsigned long flags;
     volatile unsigned int *ic = (unsigned int *) IC_BASE;
+    unsigned int irq_nr = data->irq;
 
     spin_lock_irqsave(&cheetah_irq_lock, flags);
     ic[IMSK] |= (1 << irq_nr);
     spin_unlock_irqrestore(&cheetah_irq_lock, flags);
 }
 
-static inline void cheetah_ack_irq(unsigned int irq_nr)
+static inline void cheetah_ack_irq(struct irq_data *data)
 {
     unsigned long flags;
     volatile unsigned int *ic = (unsigned int *) IC_BASE;
+    unsigned int irq_nr = data->irq;
 
     spin_lock_irqsave(&cheetah_irq_lock, flags);
     ic[ISTS] = (1 << irq_nr);
     spin_unlock_irqrestore(&cheetah_irq_lock, flags);
 }
 
-static inline void cheetah_mask_ack_irq(unsigned int irq_nr)
+static inline void cheetah_mask_ack_irq(struct irq_data *data)
 {
     unsigned long flags;
     volatile unsigned int *ic = (unsigned int *) IC_BASE;
+    unsigned int irq_nr = data->irq;
 
     spin_lock_irqsave(&cheetah_irq_lock, flags);
     ic[IMSK] |= (1 << irq_nr);
@@ -88,10 +91,11 @@ static inline void cheetah_mask_ack_irq(unsigned int irq_nr)
     spin_unlock_irqrestore(&cheetah_irq_lock, flags);
 }
 
-static inline void cheetah_unmask_irq(unsigned int irq_nr)
+static inline void cheetah_unmask_irq(struct irq_data *data)
 {
     unsigned long flags;
     volatile unsigned int *ic = (unsigned int *) IC_BASE;
+    unsigned int irq_nr = data->irq;
 
     spin_lock_irqsave(&cheetah_irq_lock, flags);
     ic[IMSK] &= ~(1 << irq_nr);
@@ -99,10 +103,11 @@ static inline void cheetah_unmask_irq(unsigned int irq_nr)
 
 }
 
-static inline void cheetah_unmask_ack_irq(unsigned int irq_nr)
+static inline void cheetah_unmask_ack_irq(struct irq_data *data)
 {
     unsigned long flags;
     volatile unsigned int *ic = (unsigned int *) IC_BASE;
+    unsigned int irq_nr = data->irq;
 
     spin_lock_irqsave(&cheetah_irq_lock, flags);
     ic[ISTS] = (1 << irq_nr);
@@ -111,11 +116,12 @@ static inline void cheetah_unmask_ack_irq(unsigned int irq_nr)
 
 }
 
-static inline int cheetah_set_irq_type(unsigned int irq_nr, unsigned int flow_type)
+static inline int cheetah_set_irq_type(struct irq_data *data, unsigned int flow_type)
 {
     unsigned long flags;
     volatile unsigned int *ic = (unsigned int *) IC_BASE;
-    
+    unsigned int irq_nr = data->irq;
+
     spin_lock_irqsave(&cheetah_irq_lock, flags);
     if (flow_type & (IRQF_TRIGGER_RISING | IRQF_TRIGGER_HIGH) )
     	ic[IMSK] |= (1 << (irq_nr + NR_IRQS));
@@ -127,12 +133,12 @@ static inline int cheetah_set_irq_type(unsigned int irq_nr, unsigned int flow_ty
 
 static struct irq_chip cheetah_irq_controller = {
     .name       = "Cheetah VIC",
-    .ack        = cheetah_ack_irq,
-    .mask       = cheetah_mask_irq,
-    .mask_ack   = cheetah_mask_ack_irq,
-    .unmask     = cheetah_unmask_irq,
-    .eoi        = cheetah_ack_irq,
-    .set_type   = cheetah_set_irq_type,
+    .irq_ack        = cheetah_ack_irq,
+    .irq_mask       = cheetah_mask_irq,
+    .irq_mask_ack   = cheetah_mask_ack_irq,
+    .irq_unmask     = cheetah_unmask_irq,
+    .irq_eoi        = cheetah_ack_irq,
+    .irq_set_type   = cheetah_set_irq_type,
 };
 
 void __init init_cheetah_irqs(void)
