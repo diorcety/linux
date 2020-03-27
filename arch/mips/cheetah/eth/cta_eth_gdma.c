@@ -2735,9 +2735,9 @@ printk("SGIO FAILED\n");
 
 	preempt_enable();
 
-	if (vlan_tx_tag_present(skb)>=0)
+	if (skb_vlan_tag_present(skb)>=0)
 	{	
-		vid = vlan_tx_tag_get(skb);
+		vid = skb_vlan_tag_get(skb);
 		vidx = vid_to_vidx(vid);
 	}
 
@@ -4052,7 +4052,7 @@ static int mon_eth_drv_init(int unit)
 	dev->set_multicast_list = &eth_rx_mode;
 	dev->do_ioctl			= &eth_ioctl;
 #endif
-	dev->features |= NETIF_F_HW_VLAN_RX | NETIF_F_HW_VLAN_FILTER | NETIF_F_HW_VLAN_TX ;
+	dev->features |= NETIF_F_HW_VLAN_CTAG_RX | NETIF_F_HW_VLAN_CTAG_FILTER | NETIF_F_HW_VLAN_CTAG_TX ;
 	dev->priv_flags |= IFF_ETH_DEV;
 
 #if defined(ENABLE_SGIO)

@@ -63,7 +63,6 @@ void dump_buf(char *buf, int len)
 static int __init cta_br_init(void)
 {
 	brioctl_set(br_ioctl_deviceless_stub); //add/del bridge. add api for wireless use.
-	br_handle_frame_hook = cta_br_handle_frame;
 
 	return 0;
 }
