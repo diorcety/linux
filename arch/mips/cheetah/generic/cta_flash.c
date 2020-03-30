@@ -34,6 +34,7 @@
 
 #ifdef CONFIG_PROC_FS
 #include <linux/proc_fs.h>
+#include <linux/seq_file.h>
 #endif
 
 #include <asm/mach-cheetah/cheetah.h>
@@ -312,7 +313,7 @@ static int erase_sector(struct m25p *flash, u32 offset)
 {
     struct sf_dev *sfd = &g_sfd[flash->dev->id];
 
-    DEBUG(MTD_DEBUG_LEVEL3, "%s: %s %dKiB at 0x%08x\n",
+    pr_debug( "%s: %s %dKiB at 0x%08x\n",
           flash->dev->name, __func__,
           flash->mtd.erasesize / 1024, offset);
 
@@ -352,7 +353,7 @@ static int cheetah_flash_erase(struct mtd_info *mtd, struct erase_info *instr)
     struct sf_dev *sfd = &g_sfd[flash->dev->id];
 #endif
 
-    DEBUG(MTD_DEBUG_LEVEL2, "%s: %s %s 0x%08x, len %lld\n",
+    pr_debug( "%s: %s %s 0x%08x, len %lld\n",
           flash->dev->name, __func__, "at",
           (u32)instr->addr, instr->len);
 
@@ -411,7 +412,7 @@ static int cheetah_flash_read(struct mtd_info *mtd, loff_t from, size_t len,
     u_char *src, *dst;
     int i;
 
-    DEBUG(MTD_DEBUG_LEVEL2, "%s: %s %s 0x%08x, len %zd\n",
+    pr_debug( "%s: %s %s 0x%08x, len %zd\n",
           flash->dev->name, __func__, "from",
           (u32)from, len);
 
@@ -459,7 +460,7 @@ static int cheetah_flash_read(struct mtd_info *mtd, loff_t from, size_t len,
     int len_left, read_bytes;
     u32 data;
 
-    DEBUG(MTD_DEBUG_LEVEL2, "%s: %s %s 0x%08x, len %zd\n",
+    pr_debug( "%s: %s %s 0x%08x, len %zd\n",
           flash->dev->name, __func__, "from",
           (u32)from, len);
 
@@ -538,7 +539,7 @@ static int cheetah_flash_write(struct mtd_info *mtd, loff_t to, size_t len,
     u32 addr = (u32) to;
     unsigned char *src = (unsigned char *) buf;
 
-    DEBUG(MTD_DEBUG_LEVEL2, "%s: %s %s 0x%08x, len %zd\n",
+    pr_debug( "%s: %s %s 0x%08x, len %zd\n",
           flash->dev->name, __func__, "to",
           (u32)to, len);
 
@@ -603,6 +604,7 @@ static int cheetah_flash_write(struct mtd_info *mtd, loff_t to, size_t len,
     return 0;
 }
 
+#if 0
 int cheetah_flash_refresh(struct mtd_info *master, struct mtd_info *mtd)
 {
 #if defined(CONFIG_DYNAMIC_PARTITION_ROOTFS) && defined(CONFIG_MTD_ROOTFS_SPLIT)
@@ -639,6 +641,7 @@ struct mtd_part {
 #endif
     return 0;
 }
+#endif
 
 
 /****************************************************************************/
@@ -675,7 +678,7 @@ struct flash_info {
  * more flash chips.  This current list focusses on newer chips, which
  * have been converging on command sets which including JEDEC ID.
  */
-static struct flash_info __devinitdata m25p_data [] = {
+static struct flash_info m25p_data [] = {
 
     /* Atmel -- some are (confusingly) marketed as "DataFlash" */
     { "at25fs010",  0x1f6601, 32 * 1024, 4, SECT_4K,},
@@ -741,7 +744,7 @@ static struct flash_info __devinitdata m25p_data [] = {
     { "w25q64", 0xef4017, 64 * 1024, 128, SECT_4K,},
 };
 
-static struct flash_info __devinitdata uniform_64k_flash[2] = {
+static struct flash_info uniform_64k_flash[2] = {
     {"uniform_64k_flash0", 0x0, 64 * 1024,  0, },
     {"uniform_64k_flash1", 0x0, 64 * 1024,  0, },
 };
@@ -773,7 +776,7 @@ static struct flash_info * sflash_capacity_detection(struct platform_device *dev
         return NULL;
 }
 
-static struct flash_info *__devinit jedec_probe(struct platform_device *dev) {
+static struct flash_info * jedec_probe(struct platform_device *dev) {
     int         tmp;
     u8          code = OPCODE_RDID;
     u8          id[3];
@@ -846,12 +849,14 @@ static inline void mtd_reallocation(struct mtd_partition *parts, int fsize)
  * matches what the READ command supports, at least until this driver
  * understands FAST_READ (for clocks over 25 MHz).
  */
-static int __devinit cheetah_flash_probe(struct platform_device *dev)
+static int cheetah_flash_probe(struct platform_device *dev)
 {
     struct flash_platform_data  *data;
     struct m25p         *flash;
     struct flash_info       *info;
     unsigned            i;
+    struct mtd_partition    *parts = NULL;
+    int         nr_parts = 0;
 
     /* Platform data helps sort out which chip type we have, as
      * well as how this board partitions it.  If we don't have
@@ -869,7 +874,7 @@ static int __devinit cheetah_flash_probe(struct platform_device *dev)
 
         /* unrecognized chip? */
         if (i == ARRAY_SIZE(m25p_data)) {
-            DEBUG(MTD_DEBUG_LEVEL0, "%s: unrecognized id %s\n",
+            pr_debug( "%s: unrecognized id %s\n",
                   dev->name, data->type);
             info = NULL;
 
@@ -917,10 +922,10 @@ static int __devinit cheetah_flash_probe(struct platform_device *dev)
     flash->mtd.writesize = 1;
     flash->mtd.flags = MTD_CAP_NORFLASH;
     flash->mtd.size = info->sector_size * info->n_sectors;
-    flash->mtd.erase = cheetah_flash_erase;
-    flash->mtd.read = cheetah_flash_read;
-    flash->mtd.write = cheetah_flash_write;
-    flash->mtd.refresh_device = cheetah_flash_refresh;
+    flash->mtd._erase = cheetah_flash_erase;
+    flash->mtd._read = cheetah_flash_read;
+    flash->mtd._write = cheetah_flash_write;
+    //flash->mtd.refresh_device = cheetah_flash_refresh;
 
     /* prefer "small sector" erase if possible */
     if (info->flags & SECT_4K) {
@@ -934,7 +939,7 @@ static int __devinit cheetah_flash_probe(struct platform_device *dev)
     dev_info(&dev->dev, "%s (%lld Kbytes)\n", info->name,
              flash->mtd.size / 1024);
 
-    DEBUG(MTD_DEBUG_LEVEL2,
+    pr_debug(
           "mtd .name = %s, .size = 0x%.16llx (%lluMiB) "
           ".erasesize = 0x%.8x (%uKiB) .numeraseregions = %d\n",
           flash->mtd.name,
@@ -944,7 +949,7 @@ static int __devinit cheetah_flash_probe(struct platform_device *dev)
 
     if (flash->mtd.numeraseregions)
         for (i = 0; i < flash->mtd.numeraseregions; i++)
-            DEBUG(MTD_DEBUG_LEVEL2,
+            pr_debug(
                   "mtd.eraseregions[%d] = { .offset = 0x%.16llx, "
                   ".erasesize = 0x%.8x (%uKiB), "
                   ".numblocks = %d }\n",
@@ -958,8 +963,6 @@ static int __devinit cheetah_flash_probe(struct platform_device *dev)
      * use readonly partitions for writeprotected sectors (BP2..BP0).
      */
     if (mtd_has_partitions()) {
-        struct mtd_partition    *parts = NULL;
-        int         nr_parts = 0;
 
 #ifdef CONFIG_MTD_CMDLINE_PARTS
         static const char *part_probes[] = { "cmdlinepart", NULL,};
@@ -1002,7 +1005,7 @@ static int __devinit cheetah_flash_probe(struct platform_device *dev)
             parts[MTD_ROOTFS].size -= sizeof(_im_hdr_t);
 
             for (i = 0; i < nr_parts; i++) {
-                DEBUG(MTD_DEBUG_LEVEL2, "partitions[%d] = "
+                pr_debug( "partitions[%d] = "
                       "{.name = %s, .offset = 0x%.16llx, "
                       ".size = 0x%.16llx (%lluKiB) }\n",
                       i, parts[i].name,
@@ -1011,25 +1014,22 @@ static int __devinit cheetah_flash_probe(struct platform_device *dev)
                       parts[i].size / 1024);
             }
             flash->partitioned = 1;
-            return add_mtd_partitions(&flash->mtd, parts, nr_parts);
         }
     } else if (data->nr_parts)
         dev_warn(&dev->dev, "ignoring %d default partitions on %s\n",
                  data->nr_parts, data->name);
 
-    return add_mtd_device(&flash->mtd) == 1 ? -ENODEV : 0;
+    return mtd_device_register(&flash->mtd, parts, nr_parts) == 1 ?
+            -ENODEV : 0;
 }
 
-static int __devexit cheetah_flash_remove(struct platform_device *dev)
+static int cheetah_flash_remove(struct platform_device *dev)
 {
     struct m25p *flash = dev_get_drvdata(&dev->dev);
     int     status;
 
     /* Clean up MTD stuff. */
-    if (mtd_has_partitions() && flash->partitioned)
-        status = del_mtd_partitions(&flash->mtd);
-    else
-        status = del_mtd_device(&flash->mtd);
+    status = mtd_device_unregister(&flash->mtd);
     if (status == 0)
         kfree(flash);
     return 0;
@@ -1094,33 +1094,38 @@ static struct platform_device cheetah_flash = {
 /*====================================================================*/
 /* Support for /proc/flash */
 
-extern struct mtd_info *mtd_table[MAX_MTD_DEVICES];
+extern struct mtd_info *__mtd_next_device(int i);
 static struct proc_dir_entry *proc_flash;
 
-static int flash_read_proc (char *page, char **start, off_t off, int count, int *eof, void *data)
+static int flash_show_proc(struct seq_file *m, void *v)
 {
-	struct m25p *flash = dev_get_drvdata(&cheetah_flash.dev);
-	char *p = page;
-	int len;
-    int i;
+    struct m25p *flash = dev_get_drvdata(&cheetah_flash.dev);
+    int i = 0;
 
-	p += sprintf(p, "%lld flash\n", (unsigned long long)flash->mtd.size);
-    for (i=0; i< MAX_MTD_DEVICES; i++) {
-        struct mtd_info *this = mtd_table[i];
+    seq_printf(m, "%lld flash\n", (unsigned long long)flash->mtd.size);
+    while(1) {
+        struct mtd_info *this = __mtd_next_device(i++);
         if (!this)
             break;
-        p += sprintf(p, "%lld %s\n", (unsigned long long)this->size, this->name);
+        seq_printf(m, "%lld %s\n", (unsigned long long)this->size, this->name);
     }
 
-	len = (p - page) - off;
-	if (len < 0)
-		len = 0;
-
-	*eof = (len <= count) ? 1 : 0;
-	*start = page + off;
-
-	return len;
+	return 0;
 }
+
+static int flash_open_proc(struct inode *inode, struct file *file)
+{
+       return single_open(file, flash_show_proc, NULL);
+}
+
+
+static const struct file_operations proc_flash_fops = {
+       .open           = flash_open_proc,
+       .read           = seq_read,
+       .llseek         = seq_lseek,
+       .release        = seq_release,
+};
+
 #endif
 
 static int __init cheetah_flash_init(void)
@@ -1143,8 +1148,7 @@ static int __init cheetah_flash_init(void)
     cheetah_flash_data.nr_parts = i;
 
 #ifdef CONFIG_PROC_FS
-	if ((proc_flash = create_proc_entry( "flash", 0, NULL )))
-		proc_flash->read_proc = flash_read_proc;
+    proc_create("flash", 0, NULL, &proc_flash_fops);
 #endif /* CONFIG_PROC_FS */
 
     err = platform_driver_register(&cheetah_flash_driver);

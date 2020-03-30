@@ -3,6 +3,7 @@
  * edit from spi_bitbang.c and spi_gpio.c
  */
 
+#include <linux/module.h>
 #include <linux/delay.h>
 #include <linux/errno.h>
 #include <linux/gpio.h>

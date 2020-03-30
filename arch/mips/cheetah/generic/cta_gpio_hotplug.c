@@ -35,7 +35,7 @@
 #define BH_ERR(fmt, args...) printk(KERN_ERR "%s: " fmt, DRV_NAME, ##args )
 #define EV_KEY2 0x0002
 
-struct gpio_keys_button *cta_buttons;
+const struct gpio_keys_button *cta_buttons;
 int polling=1;
 
 struct bh_map {
@@ -163,7 +163,7 @@ static void button_hotplug_event(struct gpio_keys_button_data *bdata,
 }
 
 
-static void gpio_keys_polled_check_state(struct gpio_keys_button *button,
+static void gpio_keys_polled_check_state(const struct gpio_keys_button *button,
 					 struct gpio_keys_button_data *bdata)
 {
 	int state;
@@ -180,10 +180,11 @@ static void gpio_keys_polled_check_state(struct gpio_keys_button *button,
 	if(type == EV_KEY) {
 		if (state != bdata->last_state) {
 			if (state == 1) { //pressed
-			int ret;
-			ret = cancel_delayed_work(&bdata->work);
-			if(!ret)
-				cancel_work_sync(&(bdata->work.work));
+				int ret;
+				ret = cancel_delayed_work(&bdata->work);
+				if(!ret) {
+					cancel_work_sync(&(bdata->work.work));
+				}
 				bdata->diff = jiffies;
 				bdata->press_cnt++;
 			}
@@ -198,10 +199,11 @@ static void gpio_keys_polled_check_state(struct gpio_keys_button *button,
 	else if(type == EV_KEY2){
 		if (state != bdata->last_state) {
 			if (state == 1) { //pressed
-			int ret;
-			ret = cancel_delayed_work(&bdata->work);
-			if(!ret)
-				cancel_work_sync(&(bdata->work.work));
+				int ret;
+				ret = cancel_delayed_work(&bdata->work);
+				if(!ret) {
+					cancel_work_sync(&(bdata->work.work));
+				}
 				button_hotplug_event(bdata, type, button->code, state);
 				bdata->diff = jiffies;
 				bdata->press_cnt++;
@@ -265,7 +267,7 @@ schedule:
 	gpio_keys_polled_queue_work(bdev);
 }
 
-static void __devinit gpio_keys_polled_open(struct gpio_keys_polled_dev *bdev)
+static void gpio_keys_polled_open(struct gpio_keys_polled_dev *bdev)
 {
 	struct gpio_keys_platform_data *pdata = bdev->pdata;
 	int i;
@@ -282,7 +284,7 @@ static void __devinit gpio_keys_polled_open(struct gpio_keys_polled_dev *bdev)
 	gpio_keys_polled_queue_work(bdev);
 }
 
-static void __devexit gpio_keys_polled_close(struct gpio_keys_polled_dev *bdev)
+static void gpio_keys_polled_close(struct gpio_keys_polled_dev *bdev)
 {
 #if 0
 	struct gpio_keys_platform_data *pdata = bdev->pdata;
@@ -314,14 +316,14 @@ static void gpio_func(int argc, char *argv[])
 		sscanf(argv[3],"%d",&low_trig);
 		sscanf(argv[4],"%d",&type);
 		sscanf(argv[5],"%s",&buf[num][0]);
-		gpiop = &cta_buttons[num];
+		gpiop = (struct gpio_keys_button *)&cta_buttons[num];
 		gpiop->gpio = gpio;
 		gpiop->active_low=low_trig;
 		gpiop->type=type;
 	}
 	else if (!strcmp(argv[0], "show")) {
 		int i;
-		struct gpio_keys_button *gpiop;
+		const struct gpio_keys_button *gpiop;
 		for(i=0; i<5; i++) {
 			gpiop = &cta_buttons[i];
 			printk("BTN_%d gpio:%d type:%d desc:%s\n",i, gpiop->gpio, gpiop->type, &buf[i][0]);
@@ -330,7 +332,7 @@ static void gpio_func(int argc, char *argv[])
 }
 
 extern int get_args (const char *string, char *argvs[]);
-static int gpio_write(struct file *file, const char *buffer, unsigned long count, void *data)
+static int gpio_write(struct file *file, const char __user *buffer, size_t count, loff_t *data)
 {
     char buf[300];
     int argc ;
@@ -346,7 +348,13 @@ static int gpio_write(struct file *file, const char *buffer, unsigned long count
     return count;
 }
 
-static int __devinit gpio_keys_polled_probe(struct platform_device *pdev)
+static const struct file_operations gpio_proc_fops = {
+	.owner          = THIS_MODULE,
+	.write          = gpio_write,
+	.llseek         = noop_llseek,
+};
+
+static int gpio_keys_polled_probe(struct platform_device *pdev)
 {
 	struct gpio_keys_platform_data *pdata = pdev->dev.platform_data;
 	struct device *dev = &pdev->dev;
@@ -368,7 +376,7 @@ static int __devinit gpio_keys_polled_probe(struct platform_device *pdev)
 	cta_buttons = &pdata->buttons[0];
 
 	for (i = 0; i < pdata->nbuttons; i++) {
-		struct gpio_keys_button *button = &pdata->buttons[i];
+		const struct gpio_keys_button *button = &pdata->buttons[i];
 		struct gpio_keys_button_data *bdata = &bdev->data[i];
 
 		if (button->wakeup) {
@@ -397,14 +405,12 @@ static int __devinit gpio_keys_polled_probe(struct platform_device *pdev)
 	{
 		struct proc_dir_entry *res;
 
-		res = create_proc_entry(DRV_NAME, S_IWUSR | S_IRUGO, NULL);
+		res = proc_create(DRV_NAME, S_IWUSR | S_IRUGO, NULL, &gpio_proc_fops);
 
 		if (!res) {
 			error = -ENOMEM;
 			goto err_free_gpio;
 		}
-		res->read_proc = NULL;
-		res->write_proc = gpio_write;
 	}
 
 	return 0;
@@ -419,7 +425,7 @@ err_free_gpio:
 	return error;
 }
 
-static int __devexit gpio_keys_polled_remove(struct platform_device *pdev)
+static int gpio_keys_polled_remove(struct platform_device *pdev)
 {
 	struct gpio_keys_polled_dev *bdev = platform_get_drvdata(pdev);
 	struct gpio_keys_platform_data *pdata = bdev->pdata;
@@ -438,7 +444,7 @@ static int __devexit gpio_keys_polled_remove(struct platform_device *pdev)
 
 static struct platform_driver gpio_keys_polled_driver = {
 	.probe	= gpio_keys_polled_probe,
-	.remove	= __devexit_p(gpio_keys_polled_remove),
+	.remove	= gpio_keys_polled_remove,
 	.driver	= {
 		.name	= DRV_NAME,
 		.owner	= THIS_MODULE,

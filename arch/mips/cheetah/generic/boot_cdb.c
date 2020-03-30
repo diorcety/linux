@@ -2,6 +2,7 @@
  *  Copyright (c) 2013	Montage Inc.	All rights reserved. 
  */
 #include <linux/version.h>
+#include <linux/slab.h>
 #include <linux/init.h>
 #include <linux/string.h>
 #include <linux/kernel.h>
@@ -243,7 +244,7 @@ unsigned short name_to_aidx(char *name)
  +----------------------------------------------------------------------------*/
 int flash_read(unsigned int offset, unsigned int to, int len)
 {
-    return mtd_info->read(mtd_info, offset, len, NULL, (u_char*)to);
+    return mtd_read(mtd_info, offset, len, NULL, (u_char*)to);
 }
 
 /*!-----------------------------------------------------------------------------
@@ -257,7 +258,7 @@ int flash_read(unsigned int offset, unsigned int to, int len)
  +----------------------------------------------------------------------------*/
 int flash_write(unsigned int offset, unsigned int from, int len)
 {
-    return mtd_info->write(mtd_info, offset, len, NULL, (u_char*)from);
+    return mtd_write(mtd_info, offset, len, NULL, (u_char*)from);
 }
 
 /*!-----------------------------------------------------------------------------
@@ -276,7 +277,7 @@ int flash_erase(unsigned int offset, int len)
     instr.len = len;
     instr.callback = NULL;
     instr.fail_addr = MTD_FAIL_ADDR_UNKNOWN;
-    return mtd_info->erase(mtd_info, &instr);
+    return mtd_erase(mtd_info, &instr);
 }
 
 #define MAX_ATTR_VALUE_SIZE	256
