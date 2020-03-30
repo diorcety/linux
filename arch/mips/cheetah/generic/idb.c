@@ -3,9 +3,9 @@
     #include <linux/sysrq.h>
 #endif
 
+#include <linux/module.h>
 #include <linux/types.h>
 #include <linux/serial.h>
-#include <linux/serialP.h>
 #include <linux/serial_reg.h>
 
 #include <linux/errno.h>
@@ -504,7 +504,7 @@ void camelot_kernel_debugger(void)
 }
 
 #ifdef CONFIG_MAGIC_SYSRQ
-static void sysrq_handle_idb(int key, struct tty_struct *tty)
+static void sysrq_handle_idb(int key)
 {
     camelot_kernel_debugger();
 }
